@@ -125,6 +125,7 @@ Modern Python + a fresh Forge clone hit a few snags. Each is a one-time fix in t
 | UI crash: `numpy.dtype size changed` | torch pulled numpy 2.x; old `scikit-image` is numpy-1 ABI | `pip install numpy==1.26.2` (Forge's intended pin) |
 | Soft-inpainting extension import error | `joblib` missing | `pip install joblib` |
 | `INCOMPATIBLE PYTHON VERSION` warning on 3.11 | Forge is tested on 3.10 | Cosmetic — ignore |
+| **Generated images come out solid black** (console shows `invalid value encountered in cast`) | VAE decode starved of VRAM: `flux_GPU_MB` defaults to ~15278 (all but 1GB), so the VAE NaNs at decode | Lower **GPU Weights (MB)** to **~12288** (top of the Forge UI) — frees ~4GB for the VAE. Or set the `flux_GPU_MB` option via the API. **Not** a VAE-precision flag; `--no-half-vae` is a no-op for FLUX |
 
 ---
 
@@ -191,11 +192,24 @@ the world moving. We routed to non-gated mirrors with the identical weights.
 **Lesson:** "401 / access restricted" on a download is a *permissions* problem, not a
 broken link — either authenticate or find an open mirror.
 
+### 7. Solid black images — *resource starvation, not a "bug"*
+After everything installed and ran, the *output* came out pure black. The console
+showed `invalid value encountered in cast` — meaning the final image tensor was full
+of **NaN** ("not a number") and turned black when converted to pixels. The cause
+wasn't the model or precision: Forge's `flux_GPU_MB` (the "GPU Weights" slider)
+defaulted to ~15.3 GB of the 16 GB card, leaving the **VAE** (the part that turns the
+math into a picture) only ~1 GB at decode time — so it overflowed into NaN. Dropping
+GPU Weights to ~12 GB gave the VAE room and fixed it. **Lesson:** on a memory-tight
+GPU, "garbage/black/NaN output" with *no crash* often means a stage got **starved of
+VRAM**, not that anything is broken — look at how memory is partitioned, not at the
+model. (Tell-tale sign it's *not* precision: `--no-half-vae` had no effect, because
+Forge auto-manages the FLUX VAE dtype to bf16 regardless.)
+
 **The meta-pattern:** when a build like this fails, the first move is to *classify the
 error* — hardware/driver? build-tool version? ABI? missing package? environment
-setting? permissions? — because each class has its own standard fix. The traceback
-almost always tells you which bucket you're in if you read the *last* few lines, not
-the scary wall in the middle.
+setting? permissions? resource starvation? — because each class has its own standard
+fix. The traceback almost always tells you which bucket you're in if you read the
+*last* few lines, not the scary wall in the middle.
 
 ---
 
