@@ -128,6 +128,77 @@ Modern Python + a fresh Forge clone hit a few snags. Each is a one-time fix in t
 
 ---
 
+## Appendix: what each error actually was (plain English)
+
+The table above is the quick reference. This section is the *why* — because reading
+these and recognizing the **category** of error is the actual skill. Almost none of
+these were bugs in anyone's code. They were **integration friction**: a hundred
+pieces of third-party software, each frozen at a different version by a different
+author, being asked to coexist on one fresh machine. Different muscle from writing
+app logic — it's plumbing, not architecture.
+
+A useful frame: most of these are **"old project, new machine"** collisions. Forge is
+pinned to roughly the software world of 2024 (Python 3.10, torch 2.3, numpy 1.26). A
+brand-new Windows box ships the world of *now* (Python 3.14, newest setuptools, numpy
+2.x). Things crack at the boundary between the two.
+
+### 1. "No CUDA device" / cu128 — *bleeding-edge hardware tax*
+Your 5080 (Blackwell, `sm_120`) is newer than the defaults most software reaches for.
+PyTorch ships builds compiled for specific CUDA versions; the default build predates
+Blackwell and literally has no machine code for your chip ("no kernel image
+available"). **Lesson:** when you own new hardware, you're ahead of the defaults and
+have to point installers at the newer build explicitly. This is the *first* thing to
+suspect on any new GPU, and it's recent enough that older AI models and search results
+often give stale advice.
+
+### 2. `No module named 'pkg_resources'` (the clip failure) — *a dependency removed a part*
+Old packages like `clip` lean on a helper (`pkg_resources`) that ships inside
+`setuptools`. Newer `setuptools` **deleted** that helper. So when pip tried to build
+`clip` in a clean sandbox using the *latest* setuptools, the thing `clip` reached for
+was gone. The fix (`--no-build-isolation`) told pip "don't spin up a clean sandbox with
+the newest tools — build it against the older setuptools already in the venv, which
+still has the part." **Lesson:** "module not found" during a *build* usually means a
+version mismatch in the build tools, not in your code.
+
+### 3. `numpy.dtype size changed` — *an ABI mismatch (the sneaky one)*
+numpy ships a compiled C core. Other libraries (here, `scikit-image`) get compiled
+*against a specific numpy version's memory layout.* torch quietly pulled in numpy 2.x,
+but Forge's scikit-image was built for numpy 1.x — and the internal struct sizes
+differ between them (the literal "size changed... expected 96, got 88"). It's not that
+a function is missing; it's that two compiled pieces disagree about the *shape of the
+bytes*. **Lesson:** "size changed / binary incompatibility" = an **ABI** clash, almost
+always numpy. Fix by pinning numpy back to what the consumers expect, not by chasing
+the symptom.
+
+### 4. `joblib` missing — *the boring-but-common one*
+An optional extension imported a library that simply wasn't installed. `pip install
+joblib`, done. **Lesson:** plain `ModuleNotFoundError` at *runtime* (not during a
+build) usually means exactly what it says — install the missing package.
+
+### 5. `'webui-user.bat' is not recognized` — *the machine being weird*
+This one wasn't Forge's fault or the ecosystem's. Your shell had
+`NoDefaultCurrentDirectoryInExePath=1` set — an unusual hardening flag that tells
+Windows "do **not** look in the current folder for programs to run." So a script
+sitting *right there* was invisible to the command that tried to call it. The launcher
+clears the flag. **Lesson:** when something is impossible ("the file is *right there*"),
+suspect an environment setting, not the file. These send you down the longest rabbit
+holes precisely because they defy common sense until you find the one obscure variable.
+
+### 6. Gated model repos — *a policy change upstream*
+The "official" FLUX download paths (Black Forest Labs' repos) were locked behind a
+login/terms wall *after* the guides were written. Not a technical error at all — just
+the world moving. We routed to non-gated mirrors with the identical weights.
+**Lesson:** "401 / access restricted" on a download is a *permissions* problem, not a
+broken link — either authenticate or find an open mirror.
+
+**The meta-pattern:** when a build like this fails, the first move is to *classify the
+error* — hardware/driver? build-tool version? ABI? missing package? environment
+setting? permissions? — because each class has its own standard fix. The traceback
+almost always tells you which bucket you're in if you read the *last* few lines, not
+the scary wall in the middle.
+
+---
+
 ## Measured performance (RTX 5080, this config)
 
 | Metric | Value |
