@@ -1,0 +1,26 @@
+# This repo is config + scripts + docs only. Never commit the heavy stuff.
+venv/
+models/
+*.safetensors
+*.ckpt
+*.pt
+*.bin
+*.gguf
+
+# Generated images / local artifacts
+*.png
+*.jpg
+*.jpeg
+_*.log
+outputs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.claude/
+.vscode/
